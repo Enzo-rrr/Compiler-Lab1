@@ -60,13 +60,24 @@ public class CodeGenerator {
             case SubNode sub -> binary(builder, registers, sub, "sub");
             case MulNode mul -> binary(builder, registers, mul, "imul");  
             case DivNode div -> binary(builder, registers, div, "idiv");
-            case ModNode mod -> binary(builder, registers, mod, "idiv"); 
-
+             case ModNode mod -> {
+                Register lhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.LEFT)); // 左操作数
+                Register rhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.RIGHT)); // 右操作数
+                Register out = registers.get(mod); // 当前节点要写入的目标寄存器
+                // cdq->idiv->mov edx
+                builder.append("    mov eax, ").append(lhs).append("\n");// eax ← 左操作数
+                builder.append("    cdq\n"); // 符号扩展，准备除法（edx:eax）
+                builder.append("    idiv ").append(rhs).append("\n"); // eax = 商, edx = 余数
+                builder.append("    mov ").append(out).append(", edx\n"); // 把余数保存到目标寄存器
+            }
+            // x86中没有取余指令，通过将被除数放在edx：eax、除数放在指定寄存器，来实现   
+            
             case ReturnNode r -> {
                 Node result = predecessorSkipProj(r, ReturnNode.RESULT);
                 Register reg = registers.get(result);
                 builder.append("    mov eax, ").append(reg).append("\n");
                 builder.append("    ret\n");
+                // x86规定函数的返回值必须通过eax（或rax返回），所以要先把结果move到eax
             }
 
             case ConstIntNode c -> {
