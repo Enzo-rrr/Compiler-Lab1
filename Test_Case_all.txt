@@ -1,0 +1,33 @@
+// 无法通过编译
+int main(){
+    int a=1;
+    return b+a;
+}
+
+// 运行时报错
+int main(){
+    int a=0;
+    return 1/a;
+}
+
+// 正确运行且有返回值
+int main(){
+    int a=1;
+    int b=2;
+    return a+b;
+}
+
+// 运行时报错
+int main(){
+    int a；
+    return a+1;
+}
+
+// 正确运行且有返回值
+int main(){
+    int a=2;
+    int b=2;
+    int c=4;
+    int d=3;
+    return (a+b)*(c-d)/2;
+}
