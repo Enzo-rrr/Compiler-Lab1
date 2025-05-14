@@ -30,9 +30,18 @@ public class CodeGenerator {
         for (IrGraph graph : program) {
             AasmRegisterAllocator allocator = new AasmRegisterAllocator();
             Map<Node, Register> registers = allocator.allocateRegisters(graph);
-            builder.append("function ")
-                .append(graph.name())
-                .append(" {\n");
+            builder.append(".global main\n")
+               .append(".global _main\n")
+               .append(".text\n\n")
+               .append("main:\n")
+               .append("    call _main\n")
+               .append("    movq %rax, %rdi\n")
+               .append("    movq $0x3C, %rax\n")
+               .append("    syscall\n\n")
+               .append("_main:\n");
+            // builder.append("function ")
+            //     .append(graph.name())
+            //     .append(" {\n");
             generateForGraph(graph, builder, registers);
             builder.append("}");
         }
