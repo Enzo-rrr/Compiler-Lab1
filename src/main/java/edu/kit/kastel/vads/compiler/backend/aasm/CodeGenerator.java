@@ -130,8 +130,14 @@ public class CodeGenerator {
         Register lhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.LEFT));
         Register rhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.RIGHT));
 
-        builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
-        builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
+        if (dest.equals(rhs)) {
+            builder.append("    movl ").append(rhs).append(", %eax\n");
+            builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+            builder.append("    ").append(opcode).append(" %eax, ").append(dest).append("\n");
+        } else {
+            builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+            builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
+        }
     }
 
     // Before --Enzo
