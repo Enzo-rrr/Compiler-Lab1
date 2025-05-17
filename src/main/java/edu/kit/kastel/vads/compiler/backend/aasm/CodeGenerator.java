@@ -1,5 +1,7 @@
 package edu.kit.kastel.vads.compiler.backend.aasm;
 
+import edu.kit.kastel.vads.compiler.backend.regalloc.GraphColoringRegisterAllocator;
+import edu.kit.kastel.vads.compiler.backend.regalloc.PhysicalRegister;
 import edu.kit.kastel.vads.compiler.backend.regalloc.Register;
 import edu.kit.kastel.vads.compiler.ir.IrGraph;
 import edu.kit.kastel.vads.compiler.ir.node.AddNode;
@@ -27,9 +29,29 @@ public class CodeGenerator {
 
     public String generateCode(List<IrGraph> program) {
         StringBuilder builder = new StringBuilder();
+
         for (IrGraph graph : program) {
-            AasmRegisterAllocator allocator = new AasmRegisterAllocator();
-            Map<Node, Register> registers = allocator.allocateRegisters(graph);
+            List<PhysicalRegister> registers = List.of(
+                    new PhysicalRegister("%ebx", 0),
+                    new PhysicalRegister("%ecx", 1),
+                    new PhysicalRegister("%edx", 2),
+                    new PhysicalRegister("%esi", 3),
+                    new PhysicalRegister("%edi", 4),
+                    new PhysicalRegister("%r8d", 5),
+                    new PhysicalRegister("%r9d", 6),
+                    new PhysicalRegister("%r10d", 7),
+                    new PhysicalRegister("%r11d", 8),
+                    new PhysicalRegister("%r12d", 9),
+                    new PhysicalRegister("%r13d", 10),
+                    new PhysicalRegister("%r14d", 11),
+                    new PhysicalRegister("%r15d", 12)
+            );
+
+            // 使用图着色寄存器分配器
+            GraphColoringRegisterAllocator allocator = new GraphColoringRegisterAllocator(registers);
+            Map<Node, Register> allocation = allocator.allocateRegisters(graph);
+//            AasmRegisterAllocator allocator = new AasmRegisterAllocator();
+//            Map<Node, Register> registers = allocator.allocateRegisters(graph);
             builder.append(".global main\n")
                .append(".global _main\n")
                .append(".text\n\n")
@@ -39,11 +61,8 @@ public class CodeGenerator {
                .append("    movq $0x3C, %rax\n")
                .append("    syscall\n\n")
                .append("_main:\n");
-            // builder.append("function ")
-            //     .append(graph.name())
-            //     .append(" {\n");
-            generateForGraph(graph, builder, registers);
-            builder.append("}");
+
+            generateForGraph(graph, builder, allocation);
         }
         return builder.toString();
     }
