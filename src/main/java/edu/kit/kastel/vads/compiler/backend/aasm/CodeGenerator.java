@@ -82,14 +82,26 @@ public class CodeGenerator {
             case SubNode sub -> binary(builder, registers, sub, "subl");
             case MulNode mul -> binary(builder, registers, mul, "imull");
             case DivNode div -> {
-                Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
-                Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
-                Register out = registers.get(div);
-                builder.append("    movl ").append(lhs).append(", %eax\n");
+                Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));   // 被除数 a
+                Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));  // 除数 b
+                Register out = registers.get(div);                                                  // 输出 c
+            
+                String lhsReg = lhs.toString();
+                String rhsReg = rhs.toString();
+                String outReg = out.toString();
+            
+                builder.append("    movl ").append(lhsReg).append(", %eax\n");
                 builder.append("    cltd\n");
-                builder.append("    movl ").append(rhs).append(", %ecx\n");
-                builder.append("    idivl %ecx\n");
-                builder.append("    movl %eax, ").append(out).append("\n");
+            
+                if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
+                    builder.append("    movl ").append(rhsReg).append(", %r10d\n");
+                    builder.append("    idivl %r10d\n");
+                } else {
+                    builder.append("    movl ").append(rhsReg).append(", %ecx\n");
+                    builder.append("    idivl %ecx\n");
+                }
+            
+                builder.append("    movl %eax, ").append(outReg).append("\n");
             }
             case ModNode mod -> {
                 Register lhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.LEFT));
