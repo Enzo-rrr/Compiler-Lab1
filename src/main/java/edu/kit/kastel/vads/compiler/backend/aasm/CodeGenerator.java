@@ -1,5 +1,10 @@
 package edu.kit.kastel.vads.compiler.backend.aasm;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import edu.kit.kastel.vads.compiler.backend.regalloc.GraphColoringRegisterAllocator;
 import edu.kit.kastel.vads.compiler.backend.regalloc.PhysicalRegister;
 import edu.kit.kastel.vads.compiler.backend.regalloc.Register;
@@ -17,12 +22,6 @@ import edu.kit.kastel.vads.compiler.ir.node.ProjNode;
 import edu.kit.kastel.vads.compiler.ir.node.ReturnNode;
 import edu.kit.kastel.vads.compiler.ir.node.StartNode;
 import edu.kit.kastel.vads.compiler.ir.node.SubNode;
-
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import static edu.kit.kastel.vads.compiler.ir.util.NodeSupport.predecessorSkipProj;
 
 public class CodeGenerator {
@@ -53,14 +52,14 @@ public class CodeGenerator {
 //            AasmRegisterAllocator allocator = new AasmRegisterAllocator();
 //            Map<Node, Register> registers = allocator.allocateRegisters(graph);
             builder.append(".global main\n")
-               .append(".global _main\n")
-               .append(".text\n\n")
-               .append("main:\n")
-               .append("    call _main\n")
-               .append("    movq %rax, %rdi\n")
-               .append("    movq $0x3C, %rax\n")
-               .append("    syscall\n\n")
-               .append("_main:\n");
+                    .append(".global _main\n")
+                    .append(".text\n\n")
+                    .append("main:\n")
+                    .append("    call _main\n")
+                    .append("    movq %rax, %rdi\n")
+                    .append("    movq $0x3C, %rax\n")
+                    .append("    syscall\n\n")
+                    .append("_main:\n");
 
             generateForGraph(graph, builder, allocation);
         }
@@ -78,12 +77,10 @@ public class CodeGenerator {
                 scan(predecessor, visited, builder, registers);
             }
         }
-
         switch (node) {
-        
-            case AddNode add -> binary(builder, registers, add, "add");
-            case SubNode sub -> binary(builder, registers, sub, "sub");
-            case MulNode mul -> binary(builder, registers, mul, "imul");
+            case AddNode add -> binary(builder, registers, add, "addl");
+            case SubNode sub -> binary(builder, registers, sub, "subl");
+            case MulNode mul -> binary(builder, registers, mul, "imull");
             case DivNode div -> {
                 Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
                 Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
@@ -104,65 +101,39 @@ public class CodeGenerator {
                 builder.append("    idivl %ecx\n");
                 builder.append("    movl %edx, ").append(out).append("\n");
             }
-
             case ReturnNode r -> {
                 Node result = predecessorSkipProj(r, ReturnNode.RESULT);
                 Register reg = registers.get(result);
-                builder.append("    mov %eax, ").append(reg).append("\n");
+                builder.append("    movl ").append(reg).append(", %eax\n");
                 builder.append("    ret\n");
             }
-
             case ConstIntNode c -> {
                 Register reg = registers.get(c);
-                builder.append("    mov ").append(reg).append(", ").append(c.value()).append("\n");
+                builder.append("    movl $").append(c.value()).append(", ").append(reg).append("\n");
             }
-
             case Phi _ -> throw new UnsupportedOperationException("phi");
             case Block _, ProjNode _, StartNode _ -> {
                 // do nothing, skip line break
                 return;
             }
-        }   
-
-        // Before  --Enzo
-        // switch (node) {
-        //     case AddNode add -> binary(builder, registers, add, "add");
-        //     case SubNode sub -> binary(builder, registers, sub, "sub");
-        //     case MulNode mul -> binary(builder, registers, mul, "mul");
-        //     case DivNode div -> binary(builder, registers, div, "div");
-        //     case ModNode mod -> binary(builder, registers, mod, "mod");
-        //     case ReturnNode r -> builder.repeat(" ", 2).append("ret ")
-        //         .append(registers.get(predecessorSkipProj(r, ReturnNode.RESULT)));
-        //     case ConstIntNode c -> builder.repeat(" ", 2)
-        //         .append(registers.get(c))
-        //         .append(" = const ")
-        //         .append(c.value());
-        //     case Phi _ -> throw new UnsupportedOperationException("phi");
-        //     case Block _, ProjNode _, StartNode _ -> {
-        //         // do nothing, skip line break
-        //         return;
-        //     }
-        // }
-
+        }
         builder.append("\n");
     }
 
     private static void binary(
-        StringBuilder builder,
-        Map<Node, Register> registers,
-        BinaryOperationNode node,
-        String opcode
+            StringBuilder builder,
+            Map<Node, Register> registers,
+            BinaryOperationNode node,
+            String opcode
     ) {
         Register dest = registers.get(node);
         Register lhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.LEFT));
         Register rhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.RIGHT));
-    
-        // mov dest, lhs
-        builder.append("    mov ").append(dest).append(", ").append(lhs).append("\n");
-        // opcode dest, rhs
-        builder.append("    ").append(opcode).append(" ").append(dest).append(", ").append(rhs).append("\n");
+
+        builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+        builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
     }
-    
+
     // Before --Enzo
     // private static void binary(
     //     StringBuilder builder,
