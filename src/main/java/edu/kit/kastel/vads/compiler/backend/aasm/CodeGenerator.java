@@ -90,7 +90,7 @@ public class CodeGenerator {
                 Register rhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.RIGHT));
                 Register out = registers.get(mod);
                 // cdq->idiv->mov edx
-                builder.append("    mov eax, ").append(lhs).append("\n");
+                builder.append("    mov %eax, ").append(lhs).append("\n");
                 builder.append("    cdq\n"); 
                 builder.append("    idiv ").append(rhs).append("\n"); 
                 builder.append("    mov ").append(out).append(", edx\n"); 
@@ -99,7 +99,7 @@ public class CodeGenerator {
             case ReturnNode r -> {
                 Node result = predecessorSkipProj(r, ReturnNode.RESULT);
                 Register reg = registers.get(result);
-                builder.append("    mov eax, ").append(reg).append("\n");
+                builder.append("    mov %eax, ").append(reg).append("\n");
                 builder.append("    ret\n");
             }
 
