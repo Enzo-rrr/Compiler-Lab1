@@ -83,17 +83,26 @@ public class CodeGenerator {
         
             case AddNode add -> binary(builder, registers, add, "add");
             case SubNode sub -> binary(builder, registers, sub, "sub");
-            case MulNode mul -> binary(builder, registers, mul, "imul");  
-            case DivNode div -> binary(builder, registers, div, "idiv");
+            case MulNode mul -> binary(builder, registers, mul, "imul");
+            case DivNode div -> {
+                Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
+                Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
+                Register out = registers.get(div);
+                builder.append("    movl ").append(lhs).append(", %eax\n");
+                builder.append("    cltd\n");
+                builder.append("    movl ").append(rhs).append(", %ecx\n");
+                builder.append("    idivl %ecx\n");
+                builder.append("    movl %eax, ").append(out).append("\n");
+            }
             case ModNode mod -> {
-                Register lhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.LEFT)); 
+                Register lhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.LEFT));
                 Register rhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.RIGHT));
                 Register out = registers.get(mod);
-                // cdq->idiv->mov edx
-                builder.append("    mov %eax, ").append(lhs).append("\n");
-                builder.append("    cdq\n"); 
-                builder.append("    idiv ").append(rhs).append("\n"); 
-                builder.append("    mov ").append(out).append(", edx\n"); 
+                builder.append("    movl ").append(lhs).append(", %eax\n");
+                builder.append("    cltd\n");
+                builder.append("    movl ").append(rhs).append(", %ecx\n");
+                builder.append("    idivl %ecx\n");
+                builder.append("    movl %edx, ").append(out).append("\n");
             }
 
             case ReturnNode r -> {
