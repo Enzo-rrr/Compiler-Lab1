@@ -80,7 +80,35 @@ public class CodeGenerator {
         switch (node) {
             case AddNode add -> binary(builder, registers, add, "addl");
             case SubNode sub -> binary(builder, registers, sub, "subl");
-            case MulNode mul -> binary(builder, registers, mul, "imull");
+            case MulNode mul -> {
+                Register dest = registers.get(mul);
+                Register lhs = registers.get(predecessorSkipProj(mul, BinaryOperationNode.LEFT));
+                Register rhs = registers.get(predecessorSkipProj(mul, BinaryOperationNode.RIGHT));
+
+                // 检查右操作数是否是常量
+                Node rightNode = predecessorSkipProj(mul, BinaryOperationNode.RIGHT);
+                if (rightNode instanceof ConstIntNode) {
+                    // 如果是常量，直接使用立即数
+                    builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+                    builder.append("    imull $").append(((ConstIntNode) rightNode).value()).append(", ").append(dest).append("\n");
+                    return;
+                }
+
+                // 处理目标寄存器与源寄存器冲突的情况
+                if (dest.equals(rhs)) {
+                    // 如果目标寄存器与右操作数相同，使用临时寄存器
+                    builder.append("    movl ").append(rhs).append(", %eax\n");
+                    builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+                    builder.append("    imull %eax, ").append(dest).append("\n");
+                } else if (dest.equals(lhs)) {
+                    // 如果目标寄存器与左操作数相同，直接操作
+                    builder.append("    imull ").append(rhs).append(", ").append(dest).append("\n");
+                } else {
+                    // 如果目标寄存器与两个操作数都不同，先移动左操作数
+                    builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+                    builder.append("    imull ").append(rhs).append(", ").append(dest).append("\n");
+                }
+            }
             case DivNode div -> {
                 Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
                 Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
@@ -159,6 +187,15 @@ public class CodeGenerator {
         Register dest = registers.get(node);
         Register lhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.LEFT));
         Register rhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.RIGHT));
+
+        // 检查右操作数是否是常量
+        Node rightNode = predecessorSkipProj(node, BinaryOperationNode.RIGHT);
+        if (rightNode instanceof ConstIntNode) {
+            // 如果是常量，直接使用立即数
+            builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+            builder.append("    ").append(opcode).append(" $").append(((ConstIntNode) rightNode).value()).append(", ").append(dest).append("\n");
+            return;
+        }
 
         // 处理目标寄存器与源寄存器冲突的情况
         if (dest.equals(rhs)) {
