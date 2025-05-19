@@ -82,36 +82,53 @@ public class CodeGenerator {
             case SubNode sub -> binary(builder, registers, sub, "subl");
             case MulNode mul -> binary(builder, registers, mul, "imull");
             case DivNode div -> {
-                Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));   // 被除数
-                Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));  // 除数
-                Register out = registers.get(div);                                                  // 输出结果
-            
-                String lhsReg = lhs.toString();
-                String rhsReg = rhs.toString();
-                String outReg = out.toString();
-            
-                builder.append("    movl ").append(lhsReg).append(", %eax\n");
-            
-                builder.append("    cltd\n");
-                String safeDivisorReg = "%r10d"; // 假设这个寄存器不分配给其他变量
-                if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
+                Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
+                Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
+                Register out = registers.get(div);
 
-                    builder.append("    movl ").append(rhsReg).append(", ").append(safeDivisorReg).append("\n");
-                    builder.append("    idivl ").append(safeDivisorReg).append("\n");
-                } else {
-                    builder.append("    movl ").append(rhsReg).append(", %ecx\n");
-                    builder.append("    idivl %ecx\n");
+                String rhsReg = rhs.toString();
+                // 先保存除数到临时寄存器
+                if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
+                    builder.append("    movl ").append(rhs).append(", %r10d\n");
                 }
-                builder.append("    movl %eax, ").append(outReg).append("\n");
+
+                // 然后处理被除数
+                builder.append("    movl ").append(lhs).append(", %eax\n");
+                builder.append("    cltd\n");
+
+                // 执行除法
+                if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
+                    builder.append("    idivl %r10d\n");
+                } else {
+                    builder.append("    idivl ").append(rhs).append("\n");
+                }
+
+                // 保存结果
+                builder.append("    movl %eax, ").append(out).append("\n");
             }
             case ModNode mod -> {
                 Register lhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.LEFT));
                 Register rhs = registers.get(predecessorSkipProj(mod, BinaryOperationNode.RIGHT));
                 Register out = registers.get(mod);
+
+                String rhsReg = rhs.toString();
+                // 先保存除数到临时寄存器
+                if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
+                    builder.append("    movl ").append(rhs).append(", %r10d\n");
+                }
+
+                // 然后处理被除数
                 builder.append("    movl ").append(lhs).append(", %eax\n");
                 builder.append("    cltd\n");
-                builder.append("    movl ").append(rhs).append(", %ecx\n");
-                builder.append("    idivl %ecx\n");
+
+                // 执行除法
+                if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
+                    builder.append("    idivl %r10d\n");
+                } else {
+                    builder.append("    idivl ").append(rhs).append("\n");
+                }
+
+                // 保存余数
                 builder.append("    movl %edx, ").append(out).append("\n");
             }
             case ReturnNode r -> {
@@ -143,11 +160,17 @@ public class CodeGenerator {
         Register lhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.LEFT));
         Register rhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.RIGHT));
 
+        // 处理目标寄存器与源寄存器冲突的情况
         if (dest.equals(rhs)) {
+            // 如果目标寄存器与右操作数相同，使用临时寄存器
             builder.append("    movl ").append(rhs).append(", %eax\n");
             builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
             builder.append("    ").append(opcode).append(" %eax, ").append(dest).append("\n");
+        } else if (dest.equals(lhs)) {
+            // 如果目标寄存器与左操作数相同，直接操作
+            builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
         } else {
+            // 如果目标寄存器与两个操作数都不同，先移动左操作数
             builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
             builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
         }
