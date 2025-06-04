@@ -2,6 +2,7 @@ package edu.kit.kastel.vads.compiler.semantic;
 
 import edu.kit.kastel.vads.compiler.parser.ast.AssignmentTree;
 import edu.kit.kastel.vads.compiler.parser.ast.BinaryOperationTree;
+import edu.kit.kastel.vads.compiler.parser.ast.BlockTree;
 import edu.kit.kastel.vads.compiler.parser.ast.BreakTree;
 import edu.kit.kastel.vads.compiler.parser.ast.ContinueTree;
 import edu.kit.kastel.vads.compiler.parser.ast.DeclarationTree;
@@ -13,6 +14,7 @@ import edu.kit.kastel.vads.compiler.parser.ast.IfTree;
 import edu.kit.kastel.vads.compiler.parser.ast.LValueIdentTree;
 import edu.kit.kastel.vads.compiler.parser.ast.LiteralTree;
 import edu.kit.kastel.vads.compiler.parser.ast.NegateTree;
+import edu.kit.kastel.vads.compiler.parser.ast.ProgramTree;
 import edu.kit.kastel.vads.compiler.parser.ast.ReturnTree;
 import edu.kit.kastel.vads.compiler.parser.ast.TernaryTree;
 import edu.kit.kastel.vads.compiler.parser.ast.TypeTree;
@@ -96,6 +98,9 @@ public class TypeAnalysis implements NoOpVisitor<Namespace<TypeAnalysis.Type>> {
     public Unit visit(FunctionTree functionTree, Namespace<Type> data) {
         Type returnType = getTypeFromTypeTree(functionTree.returnType());
         data.put(functionTree.name(), returnType, (existing, replacement) -> replacement);
+        
+        // Recursively visit the function body
+        functionTree.body().accept(this, data);
         return Unit.INSTANCE;
     }
 
@@ -146,7 +151,11 @@ public class TypeAnalysis implements NoOpVisitor<Namespace<TypeAnalysis.Type>> {
     @Override
     public Unit visit(ReturnTree returnTree, Namespace<Type> data) {
         Type returnType = getExpressionType(returnTree.expression(), data);
-        // TODO: Check against function's return type
+        // For now, assume main function should return int
+        // TODO: This should be improved to check against the actual function's declared return type
+        if (returnType != Type.INT) {
+            throw new SemanticException("Function must return int, but got " + returnType);
+        }
         return Unit.INSTANCE;
     }
 
@@ -160,6 +169,24 @@ public class TypeAnalysis implements NoOpVisitor<Namespace<TypeAnalysis.Type>> {
         return Unit.INSTANCE;
     }
 
+    @Override
+    public Unit visit(ProgramTree programTree, Namespace<Type> data) {
+        // Recursively visit all functions in the program
+        for (var function : programTree.topLevelTrees()) {
+            function.accept(this, data);
+        }
+        return Unit.INSTANCE;
+    }
+
+    @Override
+    public Unit visit(BlockTree blockTree, Namespace<Type> data) {
+        // Recursively visit all statements in the block
+        for (var statement : blockTree.statements()) {
+            statement.accept(this, data);
+        }
+        return Unit.INSTANCE;
+    }
+
     private Type getExpressionType(ExpressionTree expression, Namespace<Type> data) {
         if (expression instanceof LiteralTree literal) {
             return literal.value().equals("true") || literal.value().equals("false") ? Type.BOOL : Type.INT;
@@ -170,15 +197,34 @@ public class TypeAnalysis implements NoOpVisitor<Namespace<TypeAnalysis.Type>> {
             }
             return type;
         } else if (expression instanceof BinaryOperationTree binary) {
-            // Type is determined by the operator
+            // First check operand types
+            Type lhsType = getExpressionType(binary.lhs(), data);
+            Type rhsType = getExpressionType(binary.rhs(), data);
+            
+            // Type is determined by the operator, but we must check operand compatibility first
             switch (binary.operatorType()) {
                 case PLUS, MINUS, MUL, DIV, MOD -> {
+                    if (lhsType != Type.INT || rhsType != Type.INT) {
+                        throw new SemanticException("Arithmetic operators require integer operands, got " + lhsType + " and " + rhsType);
+                    }
                     return Type.INT;
                 }
-                case EQUAL, NOT_EQUAL, LESS, LESS_EQUAL, GREATER, GREATER_EQUAL -> {
+                case EQUAL, NOT_EQUAL -> {
+                    if (lhsType != rhsType) {
+                        throw new SemanticException("Comparison operators require operands of the same type, got " + lhsType + " and " + rhsType);
+                    }
+                    return Type.BOOL;
+                }
+                case LESS, LESS_EQUAL, GREATER, GREATER_EQUAL -> {
+                    if (lhsType != Type.INT || rhsType != Type.INT) {
+                        throw new SemanticException("Comparison operators require integer operands, got " + lhsType + " and " + rhsType);
+                    }
                     return Type.BOOL;
                 }
                 case LOGICAL_AND, LOGICAL_OR -> {
+                    if (lhsType != Type.BOOL || rhsType != Type.BOOL) {
+                        throw new SemanticException("Logical operators require boolean operands, got " + lhsType + " and " + rhsType);
+                    }
                     return Type.BOOL;
                 }
                 default -> throw new SemanticException("Unsupported operator: " + binary.operatorType());

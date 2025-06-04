@@ -31,7 +31,7 @@ public class Main {
         try {
             new SemanticAnalysis().analyze(program);
         } catch (SemanticException e) {
-            e.printStackTrace();
+            System.err.println("Semantic error: " + e.getMessage());
             System.exit(7);
             return;
         }

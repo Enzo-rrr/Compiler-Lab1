@@ -405,7 +405,7 @@ public class Parser {
             }
             case Keyword(var type, var span) when type == KeywordType.TRUE || type == KeywordType.FALSE -> {
                 this.tokenSource.consume();
-                yield new LiteralTree(type == KeywordType.TRUE ? "1" : "0", 10, span);
+                yield new LiteralTree(type == KeywordType.TRUE ? "true" : "false", 10, span);
             }
             case Token t -> throw new ParseException("invalid factor " + t);
         };
