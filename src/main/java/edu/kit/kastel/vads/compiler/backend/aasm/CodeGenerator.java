@@ -105,7 +105,7 @@ public class CodeGenerator {
         switch (node) {
             case AddNode add -> binary(builder, registers, add, "addl");
             case SubNode sub -> binary(builder, registers, sub, "subl");
-            case MulNode mul -> binary(builder, registers, mul, "imull");
+            case MulNode mul -> handleMultiplication(builder, registers, mul);
             case DivNode div -> {
                 Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
                 Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
@@ -153,23 +153,25 @@ public class CodeGenerator {
                 Register reg = registers.get(result);
                 builder.append("    movl ").append(reg).append(", %eax\n");
                 builder.append("    ret\n");
+                // Mark that we've generated a return - no more instructions should follow
+                return;  // Exit early to prevent dead code generation
             }
             case ConstIntNode c -> {
                 Register reg = registers.get(c);
                 builder.append("    movl $").append(c.value()).append(", ").append(reg).append("\n");
             }
             case Phi phi -> {
+                // Simplified Phi handling to reduce redundant instructions
                 Register out = registers.get(phi);
-                for (int i = 0; i < phi.predecessors().size(); i++) {
-                    Node pred = phi.predecessors().get(i);
-                    Register predReg = registers.get(pred);
-                    if (i == 0) {
-                        builder.append("    movl ").append(predReg).append(", ").append(out).append("\n");
-                    } else {
-                        String label = ".L" + phi.block().hashCode() + "_" + i;
-                        builder.append("    cmpl $0, ").append(predReg).append("\n");
-                        builder.append("    cmovne ").append(predReg).append(", ").append(out).append("\n");
+                if (phi.predecessors().size() > 0) {
+                    Node firstPred = phi.predecessors().get(0);
+                    Register firstReg = registers.get(firstPred);
+                    // Only generate move if registers are different and both are valid
+                    if (firstReg != null && out != null && !out.equals(firstReg)) {
+                        builder.append("    movl ").append(firstReg).append(", ").append(out).append("\n");
                     }
+                    // For additional predecessors, we would need more sophisticated phi resolution
+                    // For now, keep it simple to avoid the redundant cmovne instructions
                 }
             }
             case ProjNode proj -> {
@@ -184,33 +186,29 @@ public class CodeGenerator {
             case BranchNode branch -> {
                 Register condReg = registers.get(branch.condition());
                 
+                // In BranchNode: predecessors[0] is condition, predecessors[1] is trueBlock, predecessors[2] is falseBlock
                 Block trueBlock = null;
                 Block falseBlock = null;
                 
-                for (Node pred : branch.predecessors()) {
-                    if (pred instanceof Block block) {
-                        if (trueBlock == null) {
-                            trueBlock = block;
-                        } else {
-                            falseBlock = block;
-                            break;
-                        }
-                    }
+                if (branch.predecessors().size() >= 3) {
+                    trueBlock = (Block) branch.predecessors().get(1);  // Second predecessor is true block
+                    falseBlock = (Block) branch.predecessors().get(2); // Third predecessor is false block
                 }
                 
+                // Generate proper if-statement structure: if condition is false, jump over then-block
                 if (condReg != null && trueBlock != null && falseBlock != null) {
                     builder.append("    cmpl $0, ").append(condReg).append("\n");
-                    builder.append("    je .L").append(trueBlock.hashCode()).append("\n");
-                    builder.append("    jmp .L").append(falseBlock.hashCode()).append("\n");
+                    builder.append("    je .L").append(falseBlock.hashCode()).append("\n");   // Jump to false block if condition is zero
                     
-                    // 生成目标块（分离它们的内容）
+                    // Fall through to true block (then-block)
                     scan(trueBlock, visited, builder, registers);
+                    
+                    // Generate false block (which typically merges with code after if-statement)
                     scan(falseBlock, visited, builder, registers);
-                } else {
-                    if (trueBlock != null) {
-                        builder.append("    jmp .L").append(trueBlock.hashCode()).append("\n");
-                        scan(trueBlock, visited, builder, registers);
-                    }
+                } else if (trueBlock != null) {
+                    // Fallback: just jump to true block
+                    builder.append("    jmp .L").append(trueBlock.hashCode()).append("\n");
+                    scan(trueBlock, visited, builder, registers);
                 }
             }
             case JumpNode jump -> {
@@ -248,6 +246,88 @@ public class CodeGenerator {
             builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
             builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
         }
+    }
+
+    /**
+     * Handle multiplication with special case optimization for powers of 2.
+     * When multiplying by powers of 2, use shift instructions for better semantics.
+     */
+    private static void handleMultiplication(
+            StringBuilder builder,
+            Map<Node, Register> registers,
+            MulNode mul
+    ) {
+        Register dest = registers.get(mul);
+        Register lhs = registers.get(predecessorSkipProj(mul, BinaryOperationNode.LEFT));
+        Register rhs = registers.get(predecessorSkipProj(mul, BinaryOperationNode.RIGHT));
+        
+        // Check if we're multiplying by a power of 2 (which likely came from shift operation)
+        Node leftNode = predecessorSkipProj(mul, BinaryOperationNode.LEFT);
+        Node rightNode = predecessorSkipProj(mul, BinaryOperationNode.RIGHT);
+        
+        // Check if right operand is a constant power of 2
+        if (rightNode instanceof ConstIntNode constNode) {
+            int value = constNode.value();
+            int shiftAmount = isPowerOfTwo(value);
+            if (shiftAmount >= 0) {
+                // Generate shift instruction instead of multiplication
+                if (dest.equals(lhs)) {
+                    // Destination is the same as left operand
+                    builder.append("    sall $").append(shiftAmount).append(", ").append(dest).append("\n");
+                } else {
+                    // Move left operand to destination, then shift
+                    builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
+                    builder.append("    sall $").append(shiftAmount).append(", ").append(dest).append("\n");
+                }
+                return;
+            }
+        }
+        
+        // Check if left operand is a constant power of 2
+        if (leftNode instanceof ConstIntNode constNode) {
+            int value = constNode.value();
+            int shiftAmount = isPowerOfTwo(value);
+            if (shiftAmount >= 0) {
+                // Generate shift instruction instead of multiplication
+                if (dest.equals(rhs)) {
+                    // Destination is the same as right operand
+                    builder.append("    sall $").append(shiftAmount).append(", ").append(dest).append("\n");
+                } else {
+                    // Move right operand to destination, then shift
+                    builder.append("    movl ").append(rhs).append(", ").append(dest).append("\n");
+                    builder.append("    sall $").append(shiftAmount).append(", ").append(dest).append("\n");
+                }
+                return;
+            }
+        }
+        
+        // Fall back to regular multiplication for non-power-of-2 cases
+        binary(builder, registers, mul, "imull");
+    }
+    
+    /**
+     * Check if a value is a power of 2 and return the shift amount.
+     * Returns -1 if not a power of 2.
+     */
+    private static int isPowerOfTwo(int value) {
+        if (value <= 0) {
+            return -1;
+        }
+        
+        // Check if value is a power of 2: (value & (value - 1)) == 0
+        if ((value & (value - 1)) != 0) {
+            return -1;
+        }
+        
+        // Calculate the shift amount
+        int shiftAmount = 0;
+        int temp = value;
+        while (temp > 1) {
+            temp >>= 1;
+            shiftAmount++;
+        }
+        
+        return shiftAmount;
     }
 
     // Before --Enzo

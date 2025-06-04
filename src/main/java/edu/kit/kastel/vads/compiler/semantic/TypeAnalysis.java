@@ -61,6 +61,16 @@ public class TypeAnalysis implements NoOpVisitor<Namespace<TypeAnalysis.Type>> {
                     throw new SemanticException("Arithmetic operators require integer operands");
                 }
             }
+            case SHIFT_LEFT, SHIFT_RIGHT -> {
+                if (lhsType != Type.INT || rhsType != Type.INT) {
+                    throw new SemanticException("Bitwise shift operators require integer operands");
+                }
+            }
+            case BITWISE_AND, BITWISE_OR, BITWISE_XOR -> {
+                if (lhsType != Type.INT || rhsType != Type.INT) {
+                    throw new SemanticException("Bitwise operators require integer operands");
+                }
+            }
             case EQUAL, NOT_EQUAL -> {
                 if (lhsType != rhsType) {
                     throw new SemanticException("Comparison operators require operands of the same type");
@@ -227,14 +237,26 @@ public class TypeAnalysis implements NoOpVisitor<Namespace<TypeAnalysis.Type>> {
                     }
                     return Type.BOOL;
                 }
+                case SHIFT_LEFT, SHIFT_RIGHT -> {
+                    if (lhsType != Type.INT || rhsType != Type.INT) {
+                        throw new SemanticException("Bitwise shift operators require integer operands, got " + lhsType + " and " + rhsType);
+                    }
+                    return Type.INT;
+                }
+                case BITWISE_AND, BITWISE_OR, BITWISE_XOR -> {
+                    if (lhsType != Type.INT || rhsType != Type.INT) {
+                        throw new SemanticException("Bitwise operators require integer operands, got " + lhsType + " and " + rhsType);
+                    }
+                    return Type.INT;
+                }
                 default -> throw new SemanticException("Unsupported operator: " + binary.operatorType());
             }
         } else if (expression instanceof NegateTree negate) {
             Type type = getExpressionType(negate.expression(), data);
-            if (type != Type.BOOL) {
-                throw new SemanticException("Negation operator requires boolean operand");
+            if (type != Type.INT) {
+                throw new SemanticException("Arithmetic negation operator requires integer operand, got " + type);
             }
-            return Type.BOOL;
+            return Type.INT;
         } else if (expression instanceof TernaryTree ternary) {
             Type thenType = getExpressionType(ternary.thenExpr(), data);
             Type elseType = getExpressionType(ternary.elseExpr(), data);
