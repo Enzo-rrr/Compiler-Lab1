@@ -1,5 +1,11 @@
 package edu.kit.kastel.vads.compiler;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
 import edu.kit.kastel.vads.compiler.backend.aasm.CodeGenerator;
 import edu.kit.kastel.vads.compiler.ir.IrGraph;
 import edu.kit.kastel.vads.compiler.ir.SsaTranslation;
@@ -13,12 +19,6 @@ import edu.kit.kastel.vads.compiler.parser.ast.ProgramTree;
 import edu.kit.kastel.vads.compiler.semantic.SemanticAnalysis;
 import edu.kit.kastel.vads.compiler.semantic.SemanticException;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-
 public class Main {
     public static void main(String[] args) throws IOException {
         if (args.length != 2) {
@@ -29,7 +29,7 @@ public class Main {
         Path output = Path.of(args[1]);
         ProgramTree program = lexAndParse(input);
         try {
-            new SemanticAnalysis(program).analyze();
+            new SemanticAnalysis().analyze(program);
         } catch (SemanticException e) {
             e.printStackTrace();
             System.exit(7);

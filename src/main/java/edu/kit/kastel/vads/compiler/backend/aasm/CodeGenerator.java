@@ -12,8 +12,10 @@ import edu.kit.kastel.vads.compiler.ir.IrGraph;
 import edu.kit.kastel.vads.compiler.ir.node.AddNode;
 import edu.kit.kastel.vads.compiler.ir.node.BinaryOperationNode;
 import edu.kit.kastel.vads.compiler.ir.node.Block;
+import edu.kit.kastel.vads.compiler.ir.node.BranchNode;
 import edu.kit.kastel.vads.compiler.ir.node.ConstIntNode;
 import edu.kit.kastel.vads.compiler.ir.node.DivNode;
+import edu.kit.kastel.vads.compiler.ir.node.JumpNode;
 import edu.kit.kastel.vads.compiler.ir.node.ModNode;
 import edu.kit.kastel.vads.compiler.ir.node.MulNode;
 import edu.kit.kastel.vads.compiler.ir.node.Node;
@@ -68,70 +70,61 @@ public class CodeGenerator {
 
     private void generateForGraph(IrGraph graph, StringBuilder builder, Map<Node, Register> registers) {
         Set<Node> visited = new HashSet<>();
+        // 从 endBlock 开始遍历以确保所有节点都被访问
         scan(graph.endBlock(), visited, builder, registers);
     }
 
     private void scan(Node node, Set<Node> visited, StringBuilder builder, Map<Node, Register> registers) {
+        // 避免重复访问
+        if (!visited.add(node)) {
+            return;
+        }
+
+        // 如果是基本块，先输出标签
+        if (node instanceof Block block) {
+            builder.append(".L").append(block.hashCode()).append(":\n");
+            
+            // 遍历并生成该块中的所有节点（按照前驱顺序）
+            for (Node predecessor : node.predecessors()) {
+                if (!(predecessor instanceof Block)) {  // 不处理其他Block，避免嵌套
+                    scan(predecessor, visited, builder, registers);
+                }
+            }
+            return;  // Block节点本身不需要生成额外代码
+        }
+
+        // 处理非Block节点
+        // 先处理当前节点的非Block前驱
         for (Node predecessor : node.predecessors()) {
-            if (visited.add(predecessor)) {
+            if (!(predecessor instanceof Block)) {
                 scan(predecessor, visited, builder, registers);
             }
         }
+
+        // 生成当前节点的代码
         switch (node) {
             case AddNode add -> binary(builder, registers, add, "addl");
             case SubNode sub -> binary(builder, registers, sub, "subl");
-            case MulNode mul -> {
-                Register dest = registers.get(mul);
-                Register lhs = registers.get(predecessorSkipProj(mul, BinaryOperationNode.LEFT));
-                Register rhs = registers.get(predecessorSkipProj(mul, BinaryOperationNode.RIGHT));
-
-                // 检查右操作数是否是常量
-                Node rightNode = predecessorSkipProj(mul, BinaryOperationNode.RIGHT);
-                if (rightNode instanceof ConstIntNode) {
-                    // 如果是常量，直接使用立即数
-                    builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
-                    builder.append("    imull $").append(((ConstIntNode) rightNode).value()).append(", ").append(dest).append("\n");
-                    return;
-                }
-
-                // 处理目标寄存器与源寄存器冲突的情况
-                if (dest.equals(rhs)) {
-                    // 如果目标寄存器与右操作数相同，使用临时寄存器
-                    builder.append("    movl ").append(rhs).append(", %eax\n");
-                    builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
-                    builder.append("    imull %eax, ").append(dest).append("\n");
-                } else if (dest.equals(lhs)) {
-                    // 如果目标寄存器与左操作数相同，直接操作
-                    builder.append("    imull ").append(rhs).append(", ").append(dest).append("\n");
-                } else {
-                    // 如果目标寄存器与两个操作数都不同，先移动左操作数
-                    builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
-                    builder.append("    imull ").append(rhs).append(", ").append(dest).append("\n");
-                }
-            }
+            case MulNode mul -> binary(builder, registers, mul, "imull");
             case DivNode div -> {
                 Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
                 Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
                 Register out = registers.get(div);
 
                 String rhsReg = rhs.toString();
-                // 先保存除数到临时寄存器
                 if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
                     builder.append("    movl ").append(rhs).append(", %r10d\n");
                 }
 
-                // 然后处理被除数
                 builder.append("    movl ").append(lhs).append(", %eax\n");
                 builder.append("    cltd\n");
 
-                // 执行除法
                 if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
                     builder.append("    idivl %r10d\n");
                 } else {
                     builder.append("    idivl ").append(rhs).append("\n");
                 }
 
-                // 保存结果
                 builder.append("    movl %eax, ").append(out).append("\n");
             }
             case ModNode mod -> {
@@ -140,23 +133,19 @@ public class CodeGenerator {
                 Register out = registers.get(mod);
 
                 String rhsReg = rhs.toString();
-                // 先保存除数到临时寄存器
                 if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
                     builder.append("    movl ").append(rhs).append(", %r10d\n");
                 }
 
-                // 然后处理被除数
                 builder.append("    movl ").append(lhs).append(", %eax\n");
                 builder.append("    cltd\n");
 
-                // 执行除法
                 if (rhsReg.equals("%eax") || rhsReg.equals("%edx")) {
                     builder.append("    idivl %r10d\n");
                 } else {
                     builder.append("    idivl ").append(rhs).append("\n");
                 }
 
-                // 保存余数
                 builder.append("    movl %edx, ").append(out).append("\n");
             }
             case ReturnNode r -> {
@@ -169,13 +158,70 @@ public class CodeGenerator {
                 Register reg = registers.get(c);
                 builder.append("    movl $").append(c.value()).append(", ").append(reg).append("\n");
             }
-            case Phi _ -> throw new UnsupportedOperationException("phi");
-            case Block _, ProjNode _, StartNode _ -> {
-                // do nothing, skip line break
-                return;
+            case Phi phi -> {
+                Register out = registers.get(phi);
+                for (int i = 0; i < phi.predecessors().size(); i++) {
+                    Node pred = phi.predecessors().get(i);
+                    Register predReg = registers.get(pred);
+                    if (i == 0) {
+                        builder.append("    movl ").append(predReg).append(", ").append(out).append("\n");
+                    } else {
+                        String label = ".L" + phi.block().hashCode() + "_" + i;
+                        builder.append("    cmpl $0, ").append(predReg).append("\n");
+                        builder.append("    cmovne ").append(predReg).append(", ").append(out).append("\n");
+                    }
+                }
+            }
+            case ProjNode proj -> {
+                Node in = proj.predecessor(ProjNode.IN);
+                Register inReg = registers.get(in);
+                Register outReg = registers.get(proj);
+                builder.append("    movl ").append(inReg).append(", ").append(outReg).append("\n");
+            }
+            case StartNode _ -> {
+                // 开始节点不需要生成代码
+            }
+            case BranchNode branch -> {
+                Register condReg = registers.get(branch.condition());
+                
+                Block trueBlock = null;
+                Block falseBlock = null;
+                
+                for (Node pred : branch.predecessors()) {
+                    if (pred instanceof Block block) {
+                        if (trueBlock == null) {
+                            trueBlock = block;
+                        } else {
+                            falseBlock = block;
+                            break;
+                        }
+                    }
+                }
+                
+                if (condReg != null && trueBlock != null && falseBlock != null) {
+                    builder.append("    cmpl $0, ").append(condReg).append("\n");
+                    builder.append("    je .L").append(trueBlock.hashCode()).append("\n");
+                    builder.append("    jmp .L").append(falseBlock.hashCode()).append("\n");
+                    
+                    // 生成目标块（分离它们的内容）
+                    scan(trueBlock, visited, builder, registers);
+                    scan(falseBlock, visited, builder, registers);
+                } else {
+                    if (trueBlock != null) {
+                        builder.append("    jmp .L").append(trueBlock.hashCode()).append("\n");
+                        scan(trueBlock, visited, builder, registers);
+                    }
+                }
+            }
+            case JumpNode jump -> {
+                Block targetBlock = (Block) jump.predecessors().get(0);
+                builder.append("    jmp .L").append(targetBlock.hashCode()).append("\n");
+                scan(targetBlock, visited, builder, registers);
+            }
+            case Block _ -> {
+                // Block 在上面已经处理了
             }
         }
-        builder.append("\n");
     }
 
     private static void binary(
@@ -187,15 +233,6 @@ public class CodeGenerator {
         Register dest = registers.get(node);
         Register lhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.LEFT));
         Register rhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.RIGHT));
-
-        // 检查右操作数是否是常量
-        Node rightNode = predecessorSkipProj(node, BinaryOperationNode.RIGHT);
-        if (rightNode instanceof ConstIntNode) {
-            // 如果是常量，直接使用立即数
-            builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
-            builder.append("    ").append(opcode).append(" $").append(((ConstIntNode) rightNode).value()).append(", ").append(dest).append("\n");
-            return;
-        }
 
         // 处理目标寄存器与源寄存器冲突的情况
         if (dest.equals(rhs)) {

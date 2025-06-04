@@ -1,9 +1,16 @@
 package edu.kit.kastel.vads.compiler.ir;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import edu.kit.kastel.vads.compiler.ir.node.AddNode;
 import edu.kit.kastel.vads.compiler.ir.node.Block;
+import edu.kit.kastel.vads.compiler.ir.node.BranchNode;
 import edu.kit.kastel.vads.compiler.ir.node.ConstIntNode;
 import edu.kit.kastel.vads.compiler.ir.node.DivNode;
+import edu.kit.kastel.vads.compiler.ir.node.JumpNode;
 import edu.kit.kastel.vads.compiler.ir.node.ModNode;
 import edu.kit.kastel.vads.compiler.ir.node.MulNode;
 import edu.kit.kastel.vads.compiler.ir.node.Node;
@@ -14,11 +21,6 @@ import edu.kit.kastel.vads.compiler.ir.node.StartNode;
 import edu.kit.kastel.vads.compiler.ir.node.SubNode;
 import edu.kit.kastel.vads.compiler.ir.optimize.Optimizer;
 import edu.kit.kastel.vads.compiler.parser.symbol.Name;
-
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 
 class GraphConstructor {
 
@@ -47,6 +49,7 @@ class GraphConstructor {
     public Node newAdd(Node left, Node right) {
         return this.optimizer.transform(new AddNode(currentBlock(), left, right));
     }
+
     public Node newSub(Node left, Node right) {
         return this.optimizer.transform(new SubNode(currentBlock(), left, right));
     }
@@ -85,6 +88,27 @@ class GraphConstructor {
         return this.currentBlock;
     }
 
+    public void setCurrentBlock(Block block) {
+        this.currentBlock = block;
+    }
+
+    public Node newBranch(Node condition, Block trueBlock, Block falseBlock) {
+        Node branch = new BranchNode(currentBlock(), condition);
+        branch.addPredecessor(trueBlock);
+        branch.addPredecessor(falseBlock);
+        return branch;
+    }
+
+    public Node newJump(Block targetBlock) {
+        Node jump = new JumpNode(currentBlock());
+        // Connect jump to endBlock for traversal
+        this.graph.endBlock().addPredecessor(jump);
+        // Store target block information by adding it as a predecessor
+        // (this is a bit unconventional but works with our current structure)
+        jump.addPredecessor(targetBlock);
+        return jump;
+    }
+
     public Phi newPhi() {
         // don't transform phi directly, it is not ready yet
         return new Phi(currentBlock());
@@ -105,7 +129,6 @@ class GraphConstructor {
         }
         return readVariableRecursive(variable, block);
     }
-
 
     private Node readVariableRecursive(Name variable, Block block) {
         Node val;
@@ -138,7 +161,7 @@ class GraphConstructor {
         return phi;
     }
 
-    void sealBlock(Block block) {
+    public void sealBlock(Block block) {
         for (Map.Entry<Name, Phi> entry : this.incompletePhis.getOrDefault(block, Map.of()).entrySet()) {
             addPhiOperands(entry.getKey(), entry.getValue());
         }
@@ -188,5 +211,4 @@ class GraphConstructor {
         }
         return tryRemoveTrivialPhi(phi);
     }
-
 }

@@ -1,12 +1,13 @@
 package edu.kit.kastel.vads.compiler.lexer;
 
+import java.util.Optional;
+
+import org.jspecify.annotations.Nullable;
+
 import edu.kit.kastel.vads.compiler.Position;
 import edu.kit.kastel.vads.compiler.Span;
 import edu.kit.kastel.vads.compiler.lexer.Operator.OperatorType;
 import edu.kit.kastel.vads.compiler.lexer.Separator.SeparatorType;
-import org.jspecify.annotations.Nullable;
-
-import java.util.Optional;
 
 public class Lexer {
     private final String source;
@@ -41,7 +42,73 @@ public class Lexer {
             case '*' -> singleOrAssign(OperatorType.MUL, OperatorType.ASSIGN_MUL);
             case '/' -> singleOrAssign(OperatorType.DIV, OperatorType.ASSIGN_DIV);
             case '%' -> singleOrAssign(OperatorType.MOD, OperatorType.ASSIGN_MOD);
-            case '=' -> new Operator(OperatorType.ASSIGN, buildSpan(1));
+            case '=' -> {
+                if (hasMore(1) && peek(1) == '=') {
+                    yield new Operator(OperatorType.EQUAL, buildSpan(2));
+                }
+                yield new Operator(OperatorType.ASSIGN, buildSpan(1));
+            }
+            case '!' -> {
+                if (hasMore(1) && peek(1) == '=') {
+                    yield new Operator(OperatorType.NOT_EQUAL, buildSpan(2));
+                }
+                yield new Operator(OperatorType.LOGICAL_NOT, buildSpan(1));
+            }
+            case '<' -> {
+                if (hasMore(1)) {
+                    if (peek(1) == '=') {
+                        yield new Operator(OperatorType.LESS_EQUAL, buildSpan(2));
+                    } else if (peek(1) == '<') {
+                        if (hasMore(2) && peek(2) == '=') {
+                            yield new Operator(OperatorType.ASSIGN_SHIFT_LEFT, buildSpan(3));
+                        }
+                        yield new Operator(OperatorType.SHIFT_LEFT, buildSpan(2));
+                    }
+                }
+                yield new Operator(OperatorType.LESS, buildSpan(1));
+            }
+            case '>' -> {
+                if (hasMore(1)) {
+                    if (peek(1) == '=') {
+                        yield new Operator(OperatorType.GREATER_EQUAL, buildSpan(2));
+                    } else if (peek(1) == '>') {
+                        if (hasMore(2) && peek(2) == '=') {
+                            yield new Operator(OperatorType.ASSIGN_SHIFT_RIGHT, buildSpan(3));
+                        }
+                        yield new Operator(OperatorType.SHIFT_RIGHT, buildSpan(2));
+                    }
+                }
+                yield new Operator(OperatorType.GREATER, buildSpan(1));
+            }
+            case '&' -> {
+                if (hasMore(1)) {
+                    if (peek(1) == '&') {
+                        yield new Operator(OperatorType.LOGICAL_AND, buildSpan(2));
+                    } else if (peek(1) == '=') {
+                        yield new Operator(OperatorType.ASSIGN_AND, buildSpan(2));
+                    }
+                }
+                yield new Operator(OperatorType.BITWISE_AND, buildSpan(1));
+            }
+            case '|' -> {
+                if (hasMore(1)) {
+                    if (peek(1) == '|') {
+                        yield new Operator(OperatorType.LOGICAL_OR, buildSpan(2));
+                    } else if (peek(1) == '=') {
+                        yield new Operator(OperatorType.ASSIGN_OR, buildSpan(2));
+                    }
+                }
+                yield new Operator(OperatorType.BITWISE_OR, buildSpan(1));
+            }
+            case '^' -> {
+                if (hasMore(1) && peek(1) == '=') {
+                    yield new Operator(OperatorType.ASSIGN_XOR, buildSpan(2));
+                }
+                yield new Operator(OperatorType.BITWISE_XOR, buildSpan(1));
+            }
+            case '~' -> new Operator(OperatorType.BITWISE_NOT, buildSpan(1));
+            case '?' -> new Operator(OperatorType.TERNARY_QUESTION, buildSpan(1));
+            case ':' -> new Operator(OperatorType.TERNARY_COLON, buildSpan(1));
             default -> {
                 if (isIdentifierChar(peek())) {
                     if (isNumeric(peek())) {
