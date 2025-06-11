@@ -1,0 +1,39 @@
+.global main
+.global _main
+.text
+
+main:
+    call _main
+    movq %rax, %rdi
+    movq $0x3C, %rax
+    syscall
+
+_main:
+    mov %ebx, 5
+
+    mov %esi, 10
+
+    mov %ebx, %ebx
+    add %ebx, %esi
+
+    mov %ebx, %ebx
+    add %ebx, %esi
+
+    mov %edi, 15
+
+    mov %ebx, %ebx
+    add %ebx, %edi
+
+    mov %ecx, 8
+
+    mov %ebx, %ebx
+    add %ebx, %ecx
+
+    mov %edx, 9
+
+    mov %ebx, %ebx
+    add %ebx, %edx
+
+    mov eax, %ebx
+    ret
+
