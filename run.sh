@@ -1,20 +1,38 @@
 #!/usr/bin/env sh
 set -e
 
-# 1. 接收两个参数：输入 C 文件 和 最终可执行输出名
-INPUT="$1"     # 例如 test.c
-OUTPUT="$2"    # 例如 test.s 最后会变成可执行 test
+# ——————————————————————————
+# 1. 参数检查
+if [ $# -ne 2 ]; then
+  echo "Usage: $0 <input.c> <output_executable>" >&2
+  exit 1
+fi
+INPUT="$1"
+OUTPUT="$2"
 
-# 2. 中间汇编文件
-TEMP_ASM="temp.s"
+# ——————————————————————————
+# 2. 找到编译器 JAR
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIBDIR="$SCRIPT_DIR/build/libs"
+# 匹配第一个 compiler-*.jar
+JAR=$(ls "$LIBDIR"/compiler-*.jar 2>/dev/null | head -n1)
+if [ ! -f "$JAR" ]; then
+  echo "Error: cannot find compiler jar in $LIBDIR" >&2
+  exit 1
+fi
 
-# 3. 直接用 java -cp 调用 Main，生成纯文本汇编
-java -cp "$(dirname "$0")/build/libs/compiler-1.0-SNAPSHOT.jar" \
-    edu.kit.kastel.vads.compiler.Main \
-    "$INPUT" "$TEMP_ASM"
+TEMP_ASM="$(mktemp /tmp/compiler_asm_XXXXXX).s"
 
-# 4. 用 gcc 把汇编文件组装并链接成二进制
+# 4. 用你的编译器生成纯文本汇编
+echo "Generating assembly with $JAR ..."
+java -cp "$JAR" edu.kit.kastel.vads.compiler.Main \
+     "$INPUT" "$TEMP_ASM"
+
+# 5. 用 gcc 把汇编编译并链接成可执行
+echo "Assembling and linking to produce $OUTPUT ..."
 gcc -o "$OUTPUT" "$TEMP_ASM"
 
-# 5. 删除临时汇编
+# 6. 清理
 rm "$TEMP_ASM"
+
+echo "Done: ./$OUTPUT"
