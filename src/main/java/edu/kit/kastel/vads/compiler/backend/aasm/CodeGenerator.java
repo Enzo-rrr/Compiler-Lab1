@@ -1,7 +1,5 @@
-//********************************************** */
 package edu.kit.kastel.vads.compiler.backend.aasm;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +24,6 @@ import edu.kit.kastel.vads.compiler.ir.node.ProjNode;
 import edu.kit.kastel.vads.compiler.ir.node.ReturnNode;
 import edu.kit.kastel.vads.compiler.ir.node.StartNode;
 import edu.kit.kastel.vads.compiler.ir.node.SubNode;
-import edu.kit.kastel.vads.compiler.ir.node.*;
 import static edu.kit.kastel.vads.compiler.ir.util.NodeSupport.predecessorSkipProj;
 
 public class CodeGenerator {
@@ -54,6 +51,8 @@ public class CodeGenerator {
             // 使用图着色寄存器分配器
             GraphColoringRegisterAllocator allocator = new GraphColoringRegisterAllocator(registers);
             Map<Node, Register> allocation = allocator.allocateRegisters(graph);
+//            AasmRegisterAllocator allocator = new AasmRegisterAllocator();
+//            Map<Node, Register> registers = allocator.allocateRegisters(graph);
             builder.append(".global main\n")
                     .append(".global _main\n")
                     .append(".text\n\n")
@@ -186,52 +185,40 @@ public class CodeGenerator {
             }
             case BranchNode branch -> {
                 Register condReg = registers.get(branch.condition());
-                // ① 用 successors 拿 then/else
-                List<Node> succs = new ArrayList<>(
-                    branch.graph().successors(branch)
-                );
-                Block thenB = (Block) succs.get(0);
-                Block elseB = (Block) succs.get(1);
-
-                // ② 生成条件跳转：如果为 0 就跳到 else
-                builder.append("    cmpl $0, ").append(condReg).append("\n");
-                builder.append("    je .L").append(elseB.hashCode()).append("\n");
-
-                // ③ then-body
-                scan(thenB, visited, builder, registers);
-                // ④ then 结束后跳回条件测试
-                //    条件测试就在分支前的那个 Block
-                Block condBlock = (Block) branch.predecessors().get(0);
-                builder.append("    jmp .L")
-                    .append(condBlock.hashCode())
-                    .append("\n");
-
-                // ⑤ else-body（循环退出）
-                scan(elseB, visited, builder, registers);
-                return;
-            }
-            
-            case JumpNode jump -> {
-                // 无条件跳转：回到循环测试那一块
-                Block tgt = (Block)
-                    jump.graph().successors(jump).iterator().next();
-                builder.append("    jmp .L").append(tgt.hashCode()).append("\n");
-                scan(tgt, visited, builder, registers);
-                return;
-            }
-
-            case Block block -> {
-                // ① 在每个 Block 一进来就打印标签
-                builder.append(".L")
-                    .append(block.hashCode())
-                    .append(":\n");
-                // ② 扫描控制流后继（本 Block 里的指令）
-                for (Node nxt : block.graph().successors(block)) {
-                    scan(nxt, visited, builder, registers);
+                
+                // In BranchNode: predecessors[0] is condition, predecessors[1] is trueBlock, predecessors[2] is falseBlock
+                Block trueBlock = null;
+                Block falseBlock = null;
+                
+                if (branch.predecessors().size() >= 3) {
+                    trueBlock = (Block) branch.predecessors().get(1);  // Second predecessor is true block
+                    falseBlock = (Block) branch.predecessors().get(2); // Third predecessor is false block
                 }
-                return;
+                
+                // Generate proper if-statement structure: if condition is false, jump over then-block
+                if (condReg != null && trueBlock != null && falseBlock != null) {
+                    builder.append("    cmpl $0, ").append(condReg).append("\n");
+                    builder.append("    je .L").append(falseBlock.hashCode()).append("\n");   // Jump to false block if condition is zero
+                    
+                    // Fall through to true block (then-block)
+                    scan(trueBlock, visited, builder, registers);
+                    
+                    // Generate false block (which typically merges with code after if-statement)
+                    scan(falseBlock, visited, builder, registers);
+                } else if (trueBlock != null) {
+                    // Fallback: just jump to true block
+                    builder.append("    jmp .L").append(trueBlock.hashCode()).append("\n");
+                    scan(trueBlock, visited, builder, registers);
+                }
             }
-
+            case JumpNode jump -> {
+                Block targetBlock = (Block) jump.predecessors().get(0);
+                builder.append("    jmp .L").append(targetBlock.hashCode()).append("\n");
+                scan(targetBlock, visited, builder, registers);
+            }
+            case Block _ -> {
+                // Block 在上面已经处理了
+            }
             default -> {
                 throw new IllegalStateException(
                     "Unhandled IR node type in CodeGenerator: " + node.getClass());
@@ -346,4 +333,20 @@ public class CodeGenerator {
         
         return shiftAmount;
     }
+
+    // Before --Enzo
+    // private static void binary(
+    //     StringBuilder builder,
+    //     Map<Node, Register> registers,
+    //     BinaryOperationNode node,
+    //     String opcode
+    // ) {
+    //     builder.repeat(" ", 2).append(registers.get(node))
+    //         .append(" = ")
+    //         .append(opcode)
+    //         .append(" ")
+    //         .append(registers.get(predecessorSkipProj(node, BinaryOperationNode.LEFT)))
+    //         .append(" ")
+    //         .append(registers.get(predecessorSkipProj(node, BinaryOperationNode.RIGHT)));
+    // }
 }
