@@ -134,11 +134,18 @@ public class TypeAnalysis implements NoOpVisitor<Namespace<TypeAnalysis.Type>> {
 
     @Override
     public Unit visit(ForTree forTree, Namespace<Type> data) {
+        if (forTree.initializer() != null) {
+            forTree.initializer().accept(this, data);
+        }
         Type conditionType = getExpressionType(forTree.condition(), data);
         if (conditionType != Type.BOOL) {
             throw new SemanticException("For condition must be boolean");
         }
-        return Unit.INSTANCE;
+        if (forTree.step() != null) {
+            forTree.step().accept(this, data);
+        }
+        forTree.body().accept(this, data);
+            return Unit.INSTANCE;
     }
 
     @Override
