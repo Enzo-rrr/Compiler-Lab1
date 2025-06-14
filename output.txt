@@ -9,31 +9,17 @@ main:
     syscall
 
 _main:
-    mov %ebx, 5
-
-    mov %esi, 10
-
-    mov %ebx, %ebx
-    add %ebx, %esi
-
-    mov %ebx, %ebx
-    add %ebx, %esi
-
-    mov %edi, 15
-
-    mov %ebx, %ebx
-    add %ebx, %edi
-
-    mov %ecx, 8
-
-    mov %ebx, %ebx
-    add %ebx, %ecx
-
-    mov %edx, 9
-
-    mov %ebx, %ebx
-    add %ebx, %edx
-
-    mov eax, %ebx
+.L476402209:
+    jmp .L212628335
+.L212628335:
+    movl $1, %ebx
+    jmp .L758529971
+.L758529971:
+    jmp .L1763847188
+.L1763847188:
+    movl %ebx, %eax
     ret
-
+.L932583850:
+    jmp .L125993742
+.L125993742:
+    jmp .L758529971

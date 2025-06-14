@@ -188,6 +188,10 @@ public class SsaTranslation {
             if (declarationTree.initializer() != null) {
                 Node rhs = declarationTree.initializer().accept(this, data).orElseThrow();
                 data.writeVariable(declarationTree.name().name(), data.currentBlock(), rhs);
+            } else {
+                // For uninitialized variables, provide a default value of 0
+                Node defaultValue = data.constructor.newConstInt(0);
+                data.writeVariable(declarationTree.name().name(), data.currentBlock(), defaultValue);
             }
             popSpan();
             return NOT_AN_EXPRESSION;
@@ -393,7 +397,9 @@ public class SsaTranslation {
             loopStack.push(new LoopContext(headerBlock, exitBlock));
             
             // Jump to initialization
-            data.constructor.newJump(initBlock);
+            Node jumpToInit = data.constructor.newJump(initBlock);
+            // Connect jump to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(jumpToInit);
             initBlock.addPredecessor(currentBlock);
             
             // Visit initialization
@@ -401,7 +407,9 @@ public class SsaTranslation {
             if (forTree.initializer() != null) {
                 forTree.initializer().accept(this, data);
             }
-            data.constructor.newJump(headerBlock);
+            Node jumpToHeader = data.constructor.newJump(headerBlock);
+            // Connect jump to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(jumpToHeader);
             headerBlock.addPredecessor(initBlock);
             // Seal init block since it has only one predecessor
             data.constructor.sealBlock(initBlock);
@@ -417,7 +425,9 @@ public class SsaTranslation {
             // Visit body
             data.constructor.setCurrentBlock(bodyBlock);
             forTree.body().accept(this, data);
-            data.constructor.newJump(stepBlock);
+            Node jumpToStep = data.constructor.newJump(stepBlock);
+            // Connect jump to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(jumpToStep);
             stepBlock.addPredecessor(bodyBlock);
             // Seal body block since it has only one predecessor (from header)
             data.constructor.sealBlock(bodyBlock);
@@ -427,7 +437,9 @@ public class SsaTranslation {
             if (forTree.step() != null) {
                 forTree.step().accept(this, data);
             }
-            data.constructor.newJump(headerBlock);
+            Node jumpBackToHeader = data.constructor.newJump(headerBlock);
+            // Connect jump to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(jumpBackToHeader);
             headerBlock.addPredecessor(stepBlock);
             // Seal step block since it has only one predecessor (from body)
             data.constructor.sealBlock(stepBlock);

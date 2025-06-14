@@ -71,9 +71,9 @@ class GraphConstructor {
     }
 
     public Node newConstInt(int value) {
-        // always move const into start block, this allows better deduplication
-        // and resultingly in better value numbering
-        return this.optimizer.transform(new ConstIntNode(this.graph.startBlock(), value));
+        // Create const in current block to ensure proper code generation order
+        // This ensures that constants appear where they are used
+        return this.optimizer.transform(new ConstIntNode(currentBlock(), value));
     }
 
     public Node newSideEffectProj(Node node) {
@@ -133,12 +133,12 @@ class GraphConstructor {
     private Node readVariableRecursive(Name variable, Block block) {
         Node val;
         if (!this.sealedBlocks.contains(block)) {
-            val = newPhi();
+            val = new Phi(block);  // Create phi for the specified block, not current block
             this.incompletePhis.computeIfAbsent(block, _ -> new HashMap<>()).put(variable, (Phi) val);
         } else if (block.predecessors().size() == 1) {
             val = readVariable(variable, block.predecessors().getFirst().block());
         } else {
-            val = newPhi();
+            val = new Phi(block);  // Create phi for the specified block, not current block
             writeVariable(variable, block, val);
             val = addPhiOperands(variable, (Phi) val);
         }
@@ -148,7 +148,8 @@ class GraphConstructor {
 
     Node addPhiOperands(Name variable, Phi phi) {
         for (Node pred : phi.block().predecessors()) {
-            phi.appendOperand(readVariable(variable, pred.block()));
+            Node operand = readVariable(variable, pred.block());
+            phi.appendOperand(operand);
         }
         return tryRemoveTrivialPhi(phi);
     }

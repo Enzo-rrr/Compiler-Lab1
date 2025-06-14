@@ -70,7 +70,9 @@ public class CodeGenerator {
 
     private void generateForGraph(IrGraph graph, StringBuilder builder, Map<Node, Register> registers) {
         Set<Node> visited = new HashSet<>();
-        // 从 endBlock 开始遍历以确保所有节点都被访问
+        // 首先从 startBlock 开始遍历，确保所有块都能被访问到
+        scan(graph.startBlock(), visited, builder, registers);
+        // 然后从 endBlock 开始遍历，确保没有遗漏的节点
         scan(graph.endBlock(), visited, builder, registers);
     }
 
@@ -90,6 +92,15 @@ public class CodeGenerator {
                     scan(predecessor, visited, builder, registers);
                 }
             }
+            
+            // Also process nodes that are assigned to variables in this block
+            // This handles cases where constants are created but not added as predecessors
+            for (Node regNode : registers.keySet()) {
+                if (regNode.block() == block && !visited.contains(regNode)) {
+                    scan(regNode, visited, builder, registers);
+                }
+            }
+            
             return;  // Block节点本身不需要生成额外代码
         }
 
@@ -158,11 +169,20 @@ public class CodeGenerator {
             }
             case ConstIntNode c -> {
                 Register reg = registers.get(c);
+                // Skip generating constants that are only used in constant branch conditions
+                // that have been optimized away
+                if (isConstantUsedOnlyInOptimizedBranch(c, visited)) {
+                    return; // Skip generating this constant
+                }
                 builder.append("    movl $").append(c.value()).append(", ").append(reg).append("\n");
             }
             case Phi phi -> {
                 // Simplified Phi handling to reduce redundant instructions
                 Register out = registers.get(phi);
+                for (int i = 0; i < phi.predecessors().size(); i++) {
+                    Node pred = phi.predecessors().get(i);
+                    Register predReg = registers.get(pred);
+                }
                 if (phi.predecessors().size() > 0) {
                     Node firstPred = phi.predecessors().get(0);
                     Register firstReg = registers.get(firstPred);
@@ -193,6 +213,25 @@ public class CodeGenerator {
                 if (branch.predecessors().size() >= 3) {
                     trueBlock = (Block) branch.predecessors().get(1);  // Second predecessor is true block
                     falseBlock = (Block) branch.predecessors().get(2); // Third predecessor is false block
+                }
+                
+                // Optimize for constant conditions
+                if (branch.condition() instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constCond) {
+                    if (constCond.value() == 0) {
+                        // Condition is false, jump directly to false block
+                        if (falseBlock != null) {
+                            builder.append("    jmp .L").append(falseBlock.hashCode()).append("\n");
+                            scan(falseBlock, visited, builder, registers);
+                        }
+                        return; // Skip generating the true block
+                    } else {
+                        // Condition is true, jump directly to true block
+                        if (trueBlock != null) {
+                            builder.append("    jmp .L").append(trueBlock.hashCode()).append("\n");
+                            scan(trueBlock, visited, builder, registers);
+                        }
+                        return; // Skip generating the false block
+                    }
                 }
                 
                 // Generate proper if-statement structure: if condition is false, jump over then-block
@@ -328,6 +367,25 @@ public class CodeGenerator {
         }
         
         return shiftAmount;
+    }
+
+    /**
+     * Check if a constant is only used in branch conditions that have been optimized away
+     */
+    private boolean isConstantUsedOnlyInOptimizedBranch(edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constant, Set<Node> visited) {
+        // For now, implement a simple heuristic: if the constant is 0 or 1 and we haven't processed
+        // any branch that uses it, it's likely an optimized-away condition
+        if (constant.value() == 0 || constant.value() == 1) {
+            // Check if this constant is used by any BranchNode that we've already optimized
+            for (Node successor : constant.graph().successors(constant)) {
+                if (successor instanceof edu.kit.kastel.vads.compiler.ir.node.BranchNode) {
+                    // If we find a branch that uses this constant, and the branch hasn't been visited,
+                    // it means we optimized it away
+                    return !visited.contains(successor);
+                }
+            }
+        }
+        return false;
     }
 
     // Before --Enzo

@@ -1,0 +1,5 @@
+int main() {
+    int i;
+    for (i = 1; false; ) {}
+    return i;
+}
