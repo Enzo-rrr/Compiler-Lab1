@@ -16,6 +16,7 @@ import edu.kit.kastel.vads.compiler.parser.Parser;
 import edu.kit.kastel.vads.compiler.parser.TokenSource;
 import edu.kit.kastel.vads.compiler.parser.ast.FunctionTree;
 import edu.kit.kastel.vads.compiler.parser.ast.ProgramTree;
+import edu.kit.kastel.vads.compiler.parser.visitor.ForToWhileElaborator;
 import edu.kit.kastel.vads.compiler.semantic.SemanticAnalysis;
 import edu.kit.kastel.vads.compiler.semantic.SemanticException;
 
@@ -28,6 +29,9 @@ public class Main {
         Path input = Path.of(args[0]);
         Path output = Path.of(args[1]);
         ProgramTree program = lexAndParse(input);
+
+        program = (ProgramTree) new ForToWhileElaborator().transform(program);
+
         try {
             new SemanticAnalysis().analyze(program);
         } catch (SemanticException e) {
