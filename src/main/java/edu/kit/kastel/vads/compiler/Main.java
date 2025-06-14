@@ -30,7 +30,7 @@ public class Main {
         Path output = Path.of(args[1]);
         ProgramTree program = lexAndParse(input);
 
-        program = (ProgramTree) new ForToWhileElaborator().transform(program);
+        //program = (ProgramTree) new ForToWhileElaborator().transform(program);
 
         try {
             new SemanticAnalysis().analyze(program);
