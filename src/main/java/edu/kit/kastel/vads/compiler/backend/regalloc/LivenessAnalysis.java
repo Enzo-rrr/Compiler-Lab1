@@ -1,12 +1,15 @@
 package edu.kit.kastel.vads.compiler.backend.regalloc;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import edu.kit.kastel.vads.compiler.ir.IrGraph;
 import edu.kit.kastel.vads.compiler.ir.node.BinaryOperationNode;
 import edu.kit.kastel.vads.compiler.ir.node.Node;
 import edu.kit.kastel.vads.compiler.ir.node.ReturnNode;
-
-import java.util.*;
-
 import static edu.kit.kastel.vads.compiler.ir.util.NodeSupport.predecessorSkipProj;
 
 public class LivenessAnalysis {
@@ -59,6 +62,13 @@ public class LivenessAnalysis {
         if (node instanceof BinaryOperationNode) {
             defs.add(node);
         }
+        // Add other node types that define values
+        if (node instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode) {
+            defs.add(node);
+        }
+        if (node instanceof edu.kit.kastel.vads.compiler.ir.node.Phi) {
+            defs.add(node);
+        }
         return defs;
     }
     
@@ -70,6 +80,14 @@ public class LivenessAnalysis {
         } else if (node instanceof ReturnNode) {
             // return expr, uses value
             uses.add(predecessorSkipProj(node, ReturnNode.RESULT));
+        } else if (node instanceof edu.kit.kastel.vads.compiler.ir.node.BranchNode) {
+            // branch condition, uses condition value
+            uses.add(node.predecessor(0)); // condition is first predecessor
+        } else if (node instanceof edu.kit.kastel.vads.compiler.ir.node.Phi) {
+            // phi node uses all its operands
+            for (Node pred : node.predecessors()) {
+                uses.add(pred);
+            }
         }
         return uses;
     }

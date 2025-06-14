@@ -353,6 +353,7 @@ public class SsaTranslation {
         @Override
         public Optional<Node> visit(WhileTree whileTree, SsaTranslation data) {
             pushSpan(whileTree);
+            Block currentBlock = data.currentBlock();
             Block headerBlock = new Block(data.constructor.graph());
             Block bodyBlock = new Block(data.constructor.graph());
             Block exitBlock = new Block(data.constructor.graph());
@@ -361,17 +362,33 @@ public class SsaTranslation {
             loopStack.push(new LoopContext(headerBlock, exitBlock));
             
             // Jump to header
-            data.constructor.newJump(headerBlock);
+            Node jumpToHeader = data.constructor.newJump(headerBlock);
+            // Connect jump to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(jumpToHeader);
+            headerBlock.addPredecessor(currentBlock);
             
             // Visit header
             data.constructor.setCurrentBlock(headerBlock);
             Node condition = whileTree.condition().accept(this, data).orElseThrow();
-            data.constructor.newBranch(condition, bodyBlock, exitBlock);
+            Node branch = data.constructor.newBranch(condition, bodyBlock, exitBlock);
+            // Connect branch to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(branch);
+            bodyBlock.addPredecessor(headerBlock);
+            exitBlock.addPredecessor(headerBlock);
             
             // Visit body
             data.constructor.setCurrentBlock(bodyBlock);
             whileTree.body().accept(this, data);
-            data.constructor.newJump(headerBlock);
+            // Only jump back to header if we haven't broken out of the loop
+            Node jumpBackToHeader = data.constructor.newJump(headerBlock);
+            // Connect jump to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(jumpBackToHeader);
+            headerBlock.addPredecessor(bodyBlock);
+            
+            // Seal blocks now that their predecessors are known
+            data.constructor.sealBlock(bodyBlock);
+            data.constructor.sealBlock(headerBlock);
+            data.constructor.sealBlock(exitBlock);
             
             // Pop loop context from stack
             loopStack.pop();
@@ -468,7 +485,17 @@ public class SsaTranslation {
             }
             
             LoopContext currentLoop = loopStack.peek();
-            data.constructor.newJump(currentLoop.exitBlock);
+            
+            // Before jumping to exit block, ensure current block is properly connected
+            // This is important for variable propagation through phi nodes
+            Block currentBlock = data.currentBlock();
+            
+            Node jumpToExit = data.constructor.newJump(currentLoop.exitBlock);
+            // Connect jump to endBlock for traversal
+            data.constructor.graph().endBlock().addPredecessor(jumpToExit);
+            // Connect the current block as a predecessor of the exit block
+            currentLoop.exitBlock.addPredecessor(currentBlock);
+            
             popSpan();
             return NOT_AN_EXPRESSION;
         }

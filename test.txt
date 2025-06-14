@@ -1,5 +1,8 @@
 int main() {
-    int i;
-    for (i = 1; false; ) {}
-    return i;
+    int n = 0;
+    while (n < 100) {
+        n += 1;
+        break;
+    }
+    return n;
 }

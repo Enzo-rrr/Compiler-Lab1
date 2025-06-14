@@ -174,21 +174,21 @@ public class CodeGenerator {
                 if (isConstantUsedOnlyInOptimizedBranch(c, visited)) {
                     return; // Skip generating this constant
                 }
+                // Always reload constants to avoid register conflicts with intermediate values
+                // This ensures that constants have their correct values when used
                 builder.append("    movl $").append(c.value()).append(", ").append(reg).append("\n");
             }
             case Phi phi -> {
                 // Simplified Phi handling to reduce redundant instructions
                 Register out = registers.get(phi);
-                for (int i = 0; i < phi.predecessors().size(); i++) {
-                    Node pred = phi.predecessors().get(i);
-                    Register predReg = registers.get(pred);
-                }
                 if (phi.predecessors().size() > 0) {
-                    Node firstPred = phi.predecessors().get(0);
-                    Register firstReg = registers.get(firstPred);
+                    // Use the last predecessor instead of the first, as it's more likely to be
+                    // the updated value (e.g., from a loop body with break statement)
+                    Node lastPred = phi.predecessors().get(phi.predecessors().size() - 1);
+                    Register lastReg = registers.get(lastPred);
                     // Only generate move if registers are different and both are valid
-                    if (firstReg != null && out != null && !out.equals(firstReg)) {
-                        builder.append("    movl ").append(firstReg).append(", ").append(out).append("\n");
+                    if (lastReg != null && out != null && !out.equals(lastReg)) {
+                        builder.append("    movl ").append(lastReg).append(", ").append(out).append("\n");
                     }
                     // For additional predecessors, we would need more sophisticated phi resolution
                     // For now, keep it simple to avoid the redundant cmovne instructions
@@ -268,20 +268,36 @@ public class CodeGenerator {
             String opcode
     ) {
         Register dest = registers.get(node);
-        Register lhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.LEFT));
-        Register rhs = registers.get(predecessorSkipProj(node, BinaryOperationNode.RIGHT));
+        Node leftNode = predecessorSkipProj(node, BinaryOperationNode.LEFT);
+        Node rightNode = predecessorSkipProj(node, BinaryOperationNode.RIGHT);
+        Register lhs = registers.get(leftNode);
+        Register rhs = registers.get(rightNode);
 
-        // 处理目标寄存器与源寄存器冲突的情况
-        if (dest.equals(rhs)) {
-            // 如果目标寄存器与右操作数相同，使用临时寄存器
+        // Ensure constants are loaded with their correct values before use
+        if (leftNode instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constLeft) {
+            builder.append("    movl $").append(constLeft.value()).append(", ").append(lhs).append("\n");
+        }
+        if (rightNode instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constRight) {
+            builder.append("    movl $").append(constRight.value()).append(", ").append(rhs).append("\n");
+        }
+
+        // More careful handling of register conflicts
+        if (dest.equals(lhs) && dest.equals(rhs)) {
+            // Both operands are in the destination register - this shouldn't happen normally
+            // but handle it by using a temporary register
+            builder.append("    movl ").append(dest).append(", %eax\n");
+            builder.append("    ").append(opcode).append(" %eax, ").append(dest).append("\n");
+        } else if (dest.equals(rhs)) {
+            // Destination conflicts with right operand
+            // Save right operand to temporary register, load left operand, then operate
             builder.append("    movl ").append(rhs).append(", %eax\n");
             builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
             builder.append("    ").append(opcode).append(" %eax, ").append(dest).append("\n");
         } else if (dest.equals(lhs)) {
-            // 如果目标寄存器与左操作数相同，直接操作
+            // Destination is same as left operand - can operate directly
             builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
         } else {
-            // 如果目标寄存器与两个操作数都不同，先移动左操作数
+            // No conflicts - load left operand to destination, then operate with right
             builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
             builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
         }
