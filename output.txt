@@ -9,28 +9,20 @@ main:
     syscall
 
 _main:
-.L358699161:
+.L897697267:
+    jmp .L1289696681
+.L1289696681:
+    jmp .L1940447180
+.L1940447180:
+    jmp .L245565335
+.L245565335:
+    movl $1, %edx
     movl $0, %ebx
-    jmp .L1993134103
-.L1993134103:
-    movl %ebx, %esi
-    movl $1, %ecx
-    movl $1, %ecx
-    movl %ecx, %eax
-    movl %esi, %ecx
-    addl %eax, %ecx
-    movl %ecx, %ebx
-    movl $100, %edx
-    movl $100, %edx
     movl %edx, %eax
-    movl %ebx, %edx
-    subl %eax, %edx
-    cmpl $0, %edx
-    je .L305623748
-.L1910163204:
-    jmp .L305623748
-.L305623748:
-    movl %ecx, %eax
+    cltd
+    idivl %ebx
+    movl %eax, %ebx
+    movl %ebx, %eax
     ret
-    jmp .L1993134103
-.L917142466:
+    jmp .L1289696681
+.L1174290147:

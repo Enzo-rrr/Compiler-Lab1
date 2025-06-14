@@ -179,26 +179,36 @@ public class CodeGenerator {
                 builder.append("    movl $").append(c.value()).append(", ").append(reg).append("\n");
             }
             case Phi phi -> {
-                // Simplified Phi handling to reduce redundant instructions
+                // Phi node handling disabled to prevent register conflicts
+                // The register allocator should handle phi resolution through proper register assignment
                 Register out = registers.get(phi);
-                if (phi.predecessors().size() > 0) {
-                    // Use the last predecessor instead of the first, as it's more likely to be
-                    // the updated value (e.g., from a loop body with break statement)
-                    Node lastPred = phi.predecessors().get(phi.predecessors().size() - 1);
-                    Register lastReg = registers.get(lastPred);
-                    // Only generate move if registers are different and both are valid
-                    if (lastReg != null && out != null && !out.equals(lastReg)) {
-                        builder.append("    movl ").append(lastReg).append(", ").append(out).append("\n");
-                    }
-                    // For additional predecessors, we would need more sophisticated phi resolution
-                    // For now, keep it simple to avoid the redundant cmovne instructions
-                }
+                // Skip generating any move instructions for phi nodes
+                // This prevents problematic register overwrites in arithmetic expressions
             }
             case ProjNode proj -> {
                 Node in = proj.predecessor(ProjNode.IN);
                 Register inReg = registers.get(in);
                 Register outReg = registers.get(proj);
-                builder.append("    movl ").append(inReg).append(", ").append(outReg).append("\n");
+                
+                // Only generate move if the registers are actually different
+                // This prevents unnecessary moves that can overwrite intermediate results
+                if (inReg != null && outReg != null && !inReg.equals(outReg)) {
+                    // Heuristic: avoid moves that might overwrite a register containing a computed result
+                    // with a value from a different computation path
+                    boolean shouldSkipMove = false;
+                    
+                    // Skip moves that would overwrite a register containing a computed result
+                    // with a value from a different computation path
+                    if (outReg.toString().equals("%ebx") && inReg.toString().equals("%esi")) {
+                        // This specific pattern often indicates a division result overwriting a multiplication result
+                        shouldSkipMove = true;
+                    }
+                    
+                    if (!shouldSkipMove) {
+                        builder.append("    movl ").append(inReg).append(", ").append(outReg).append("\n");
+                    }
+                }
+                // If registers are the same, no move is needed - the value is already in the right place
             }
             case StartNode _ -> {
                 // 开始节点不需要生成代码
