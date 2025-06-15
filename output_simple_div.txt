@@ -1,0 +1,21 @@
+.global main
+.global _main
+.text
+
+main:
+    call _main
+    movq %rax, %rdi
+    movq $0x3C, %rax
+    syscall
+
+_main:
+.L233530418:
+    movl $1, %ecx
+    movl $0, %ebx
+    movl %ecx, %eax
+    cltd
+    idivl %ebx
+    movl %eax, %ebx
+    movl %ebx, %eax
+    ret
+.L1811075214:

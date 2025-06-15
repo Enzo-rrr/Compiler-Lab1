@@ -134,18 +134,6 @@ public class SsaTranslation {
             pushSpan(binaryOperationTree);
             Node lhs = binaryOperationTree.lhs().accept(this, data).orElseThrow();
             Node rhs = binaryOperationTree.rhs().accept(this, data).orElseThrow();
-            
-            // Check for division by zero with constant operands
-            if (binaryOperationTree.operatorType() == edu.kit.kastel.vads.compiler.lexer.Operator.OperatorType.DIV ||
-                binaryOperationTree.operatorType() == edu.kit.kastel.vads.compiler.lexer.Operator.OperatorType.MOD) {
-                if (rhs instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constRhs) {
-                    if (constRhs.value() == 0) {
-                        // Simulate floating point exception by throwing a runtime exception
-                        throw new ArithmeticException("Floating point exception: Division by zero detected");
-                    }
-                }
-            }
-            
             Node res = switch (binaryOperationTree.operatorType()) {
                 case MINUS -> data.constructor.newSub(lhs, rhs);
                 case PLUS -> data.constructor.newAdd(lhs, rhs);
