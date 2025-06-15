@@ -379,11 +379,27 @@ public class SsaTranslation {
             // Visit body
             data.constructor.setCurrentBlock(bodyBlock);
             whileTree.body().accept(this, data);
-            // Only jump back to header if we haven't broken out of the loop
-            Node jumpBackToHeader = data.constructor.newJump(headerBlock);
-            // Connect jump to endBlock for traversal
-            data.constructor.graph().endBlock().addPredecessor(jumpBackToHeader);
-            headerBlock.addPredecessor(bodyBlock);
+            
+            // After visiting the body, check if we need to add a back edge
+            // Only add back edge if the body doesn't end with break/return
+            boolean bodyEndsWithBreak = false;
+            if (whileTree.body() instanceof BlockTree blockTree) {
+                for (StatementTree stmt : blockTree.statements()) {
+                    if (stmt instanceof BreakTree || stmt instanceof ReturnTree) {
+                        bodyEndsWithBreak = true;
+                        break;
+                    }
+                }
+            } else if (whileTree.body() instanceof BreakTree || whileTree.body() instanceof ReturnTree) {
+                bodyEndsWithBreak = true;
+            }
+            
+            if (!bodyEndsWithBreak) {
+                Node jumpBackToHeader = data.constructor.newJump(headerBlock);
+                // Connect jump to endBlock for traversal
+                data.constructor.graph().endBlock().addPredecessor(jumpBackToHeader);
+                headerBlock.addPredecessor(bodyBlock);
+            }
             
             // Seal blocks now that their predecessors are known
             data.constructor.sealBlock(bodyBlock);

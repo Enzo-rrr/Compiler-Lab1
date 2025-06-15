@@ -1,4 +1,10 @@
 int main() {
-  while (true) break;
-  return 1 / 0;
+    int i = 0;
+    while (true) {
+        i = i + 1;
+        if (i == 42) {
+            break;
+        }
+    }
+    return i;
 }

@@ -28,6 +28,9 @@ import static edu.kit.kastel.vads.compiler.ir.util.NodeSupport.predecessorSkipPr
 
 public class CodeGenerator {
 
+    // Track which Phi nodes have been initialized to avoid re-initialization in loops
+    private final Set<Phi> initializedPhiNodes = new HashSet<>();
+
     public String generateCode(List<IrGraph> program) {
         StringBuilder builder = new StringBuilder();
 
@@ -69,6 +72,9 @@ public class CodeGenerator {
     }
 
     private void generateForGraph(IrGraph graph, StringBuilder builder, Map<Node, Register> registers) {
+        // Clear the initialized Phi nodes set for each new graph
+        initializedPhiNodes.clear();
+        
         Set<Node> visited = new HashSet<>();
         // 首先从 startBlock 开始遍历，确保所有块都能被访问到
         scan(graph.startBlock(), visited, builder, registers);
@@ -114,9 +120,9 @@ public class CodeGenerator {
 
         // 生成当前节点的代码
         switch (node) {
-            case AddNode add -> binary(builder, registers, add, "addl");
-            case SubNode sub -> binary(builder, registers, sub, "subl");
-            case MulNode mul -> handleMultiplication(builder, registers, mul);
+            case AddNode add -> binary(builder, registers, add, "addl", initializedPhiNodes);
+            case SubNode sub -> binary(builder, registers, sub, "subl", initializedPhiNodes);
+            case MulNode mul -> handleMultiplication(builder, registers, mul, initializedPhiNodes);
             case DivNode div -> {
                 Register lhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.LEFT));
                 Register rhs = registers.get(predecessorSkipProj(div, BinaryOperationNode.RIGHT));
@@ -179,11 +185,10 @@ public class CodeGenerator {
                 builder.append("    movl $").append(c.value()).append(", ").append(reg).append("\n");
             }
             case Phi phi -> {
-                // Phi node handling disabled to prevent register conflicts
-                // The register allocator should handle phi resolution through proper register assignment
-                Register out = registers.get(phi);
-                // Skip generating any move instructions for phi nodes
-                // This prevents problematic register overwrites in arithmetic expressions
+                // Phi nodes represent the merging of values from different control flow paths
+                // For now, we completely disable Phi node code generation
+                // and let the register allocator handle variable flow
+                // This prevents incorrect initialization that interferes with loop variables
             }
             case ProjNode proj -> {
                 Node in = proj.predecessor(ProjNode.IN);
@@ -275,7 +280,8 @@ public class CodeGenerator {
             StringBuilder builder,
             Map<Node, Register> registers,
             BinaryOperationNode node,
-            String opcode
+            String opcode,
+            Set<Phi> initializedPhiNodes
     ) {
         Register dest = registers.get(node);
         Node leftNode = predecessorSkipProj(node, BinaryOperationNode.LEFT);
@@ -283,14 +289,112 @@ public class CodeGenerator {
         Register lhs = registers.get(leftNode);
         Register rhs = registers.get(rightNode);
 
-        // Ensure constants are loaded with their correct values before use
-        if (leftNode instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constLeft) {
-            builder.append("    movl $").append(constLeft.value()).append(", ").append(lhs).append("\n");
+        // Handle Phi nodes by using their assigned registers directly
+        // Special handling for loop variables: if we're in a loop and the Phi node
+        // represents a loop variable, try to use the updated value instead of the initial value
+        if (leftNode instanceof edu.kit.kastel.vads.compiler.ir.node.Phi phi) {
+            // Only initialize if this Phi node hasn't been initialized yet
+            if (!initializedPhiNodes.contains(phi)) {
+                initializedPhiNodes.add(phi);
+                
+                // Check if this might be a loop variable by looking for AddNode operands
+                Node addOperand = null;
+                for (Node operand : phi.predecessors()) {
+                    if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.AddNode) {
+                        addOperand = operand;
+                        break;
+                    }
+                }
+                
+                if (addOperand != null) {
+                    // This looks like a loop variable - use the AddNode's register instead
+                    Register addReg = registers.get(addOperand);
+                    if (addReg != null) {
+                        builder.append("    movl ").append(addReg).append(", ").append(lhs).append("\n");
+                    } else {
+                        // Fallback to constant initialization
+                        Node constantOperand = null;
+                        for (Node operand : phi.predecessors()) {
+                            if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode) {
+                                constantOperand = operand;
+                                break;
+                            }
+                        }
+                        if (constantOperand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constNode) {
+                            builder.append("    movl $").append(constNode.value()).append(", ").append(lhs).append("\n");
+                        } else {
+                            builder.append("    movl $0, ").append(lhs).append("\n");
+                        }
+                    }
+                } else {
+                    // Not a loop variable - use constant initialization
+                    Node constantOperand = null;
+                    for (Node operand : phi.predecessors()) {
+                        if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode) {
+                            constantOperand = operand;
+                            break;
+                        }
+                    }
+                    if (constantOperand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constNode) {
+                        builder.append("    movl $").append(constNode.value()).append(", ").append(lhs).append("\n");
+                    } else {
+                        builder.append("    movl $0, ").append(lhs).append("\n");
+                    }
+                }
+            }
         }
-        if (rightNode instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constRight) {
-            builder.append("    movl $").append(constRight.value()).append(", ").append(rhs).append("\n");
+        if (rightNode instanceof edu.kit.kastel.vads.compiler.ir.node.Phi phi) {
+            // Only initialize if this Phi node hasn't been initialized yet
+            if (!initializedPhiNodes.contains(phi)) {
+                initializedPhiNodes.add(phi);
+                
+                // Check if this might be a loop variable by looking for AddNode operands
+                Node addOperand = null;
+                for (Node operand : phi.predecessors()) {
+                    if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.AddNode) {
+                        addOperand = operand;
+                        break;
+                    }
+                }
+                
+                if (addOperand != null) {
+                    // This looks like a loop variable - use the AddNode's register instead
+                    Register addReg = registers.get(addOperand);
+                    if (addReg != null) {
+                        builder.append("    movl ").append(addReg).append(", ").append(rhs).append("\n");
+                    } else {
+                        // Fallback to constant initialization
+                        Node constantOperand = null;
+                        for (Node operand : phi.predecessors()) {
+                            if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode) {
+                                constantOperand = operand;
+                                break;
+                            }
+                        }
+                        if (constantOperand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constNode) {
+                            builder.append("    movl $").append(constNode.value()).append(", ").append(rhs).append("\n");
+                        } else {
+                            builder.append("    movl $0, ").append(rhs).append("\n");
+                        }
+                    }
+                } else {
+                    // Not a loop variable - use constant initialization
+                    Node constantOperand = null;
+                    for (Node operand : phi.predecessors()) {
+                        if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode) {
+                            constantOperand = operand;
+                            break;
+                        }
+                    }
+                    if (constantOperand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode constNode) {
+                        builder.append("    movl $").append(constNode.value()).append(", ").append(rhs).append("\n");
+                    } else {
+                        builder.append("    movl $0, ").append(rhs).append("\n");
+                    }
+                }
+            }
         }
-
+        
         // More careful handling of register conflicts
         if (dest.equals(lhs) && dest.equals(rhs)) {
             // Both operands are in the destination register - this shouldn't happen normally
@@ -311,6 +415,12 @@ public class CodeGenerator {
             builder.append("    movl ").append(lhs).append(", ").append(dest).append("\n");
             builder.append("    ").append(opcode).append(" ").append(rhs).append(", ").append(dest).append("\n");
         }
+        
+        // Special handling for loop variables: if the left operand was a Phi node,
+        // update its register with the computed result to maintain loop state
+        if (leftNode instanceof edu.kit.kastel.vads.compiler.ir.node.Phi && !dest.equals(lhs)) {
+            builder.append("    movl ").append(dest).append(", ").append(lhs).append("\n");
+        }
     }
 
     /**
@@ -320,7 +430,8 @@ public class CodeGenerator {
     private static void handleMultiplication(
             StringBuilder builder,
             Map<Node, Register> registers,
-            MulNode mul
+            MulNode mul,
+            Set<Phi> initializedPhiNodes
     ) {
         Register dest = registers.get(mul);
         Register lhs = registers.get(predecessorSkipProj(mul, BinaryOperationNode.LEFT));
@@ -367,7 +478,7 @@ public class CodeGenerator {
         }
         
         // Fall back to regular multiplication for non-power-of-2 cases
-        binary(builder, registers, mul, "imull");
+        binary(builder, registers, mul, "imull", initializedPhiNodes);
     }
     
     /**
@@ -412,6 +523,42 @@ public class CodeGenerator {
             }
         }
         return false;
+    }
+
+    /**
+     * Try to resolve a Phi node to a concrete operand.
+     * Returns the best non-Phi operand, preferring constants and computed values.
+     */
+    private static Node resolvePhiNode(edu.kit.kastel.vads.compiler.ir.node.Phi phi) {
+        if (phi.predecessors().isEmpty()) {
+            return null;
+        }
+        
+        // First, look for constant operands
+        for (Node operand : phi.predecessors()) {
+            if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.ConstIntNode) {
+                return operand;
+            }
+        }
+        
+        // Then, look for computed values (AddNode, SubNode, etc.)
+        for (Node operand : phi.predecessors()) {
+            if (operand instanceof edu.kit.kastel.vads.compiler.ir.node.AddNode ||
+                operand instanceof edu.kit.kastel.vads.compiler.ir.node.SubNode ||
+                operand instanceof edu.kit.kastel.vads.compiler.ir.node.MulNode) {
+                return operand;
+            }
+        }
+        
+        // Finally, accept any non-Phi operand
+        for (Node operand : phi.predecessors()) {
+            if (!(operand instanceof edu.kit.kastel.vads.compiler.ir.node.Phi)) {
+                return operand;
+            }
+        }
+        
+        // If all operands are Phi nodes, return null to avoid infinite recursion
+        return null;
     }
 
     // Before --Enzo
